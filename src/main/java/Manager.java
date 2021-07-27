@@ -31,7 +31,6 @@ public class Manager {
 
     public static void main(String[] args) throws InterruptedException {
 
-        System.out.println("Main Thread");
         cleanQueues();
         isListening = false;
         maxHeapNumWorkersAndLocals.add(0);
