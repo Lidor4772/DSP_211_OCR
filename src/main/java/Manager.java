@@ -28,13 +28,12 @@ public class Manager {
     private static int numOfCreatedSummaryFiles=0;
 
 
-
     public static void main(String[] args) throws InterruptedException {
 
-        cleanQueues();
+        cleanQueues(); // Clear items that may have remained in queue
         isListening = false;
         maxHeapNumWorkersAndLocals.add(0);
-        awsBundle.changeDefaultVisibilityTimeout(requestsWorkersQueueUrl,"120");
+        awsBundle.changeDefaultVisibilityTimeout(requestsWorkersQueueUrl,"120"); //Visibility timeout declaration
 
         List<Message> messages;
         while(!shouldTerminate)
@@ -44,10 +43,10 @@ public class Manager {
             for(Message message : messages) {
                 synchronized (isListening) {
                     if (!isListening)
-                        listen();
+                        listen(); // Starting the receiving thread
                 }
                 String[] messageElements = message.getBody().split(AwsBundle.Delimiter);
-                String uniqueLocalFilePath = messageElements[awsBundle.uniqueLocalFilePath];
+                String uniqueLocalFilePath = messageElements[awsBundle.uniqueLocalFilePath]; // Place in S3
                 String uniqueLocalId = uniqueLocalFilePath.substring((AwsBundle.inputFolder + "/").length());
                 if (shouldTerminate)
                 {
@@ -56,21 +55,21 @@ public class Manager {
                 }
                 threadPool.execute(() -> {
                     InputStream inputStream = awsBundle.downloadFileFromS3(AwsBundle.bucketName, uniqueLocalFilePath);
-                    List<String> imagesUrls = processFile(inputStream, uniqueLocalId);
+                    List<String> imagesUrls = processFile(inputStream, uniqueLocalId); // Getting the urls
                     int numOfRequestedWorkers = calcNumOfWorkers(Integer.parseInt(messageElements[awsBundle.workersRatio]),imagesUrls.size());
                     int maxNumOfWorkers;
                     synchronized (maxHeapNumWorkersAndLocals) {
                         maxNumOfWorkers = maxHeapNumWorkersAndLocals.peek();
-                        maxHeapNumWorkersAndLocals.add(numOfRequestedWorkers);
+                        maxHeapNumWorkersAndLocals.add(numOfRequestedWorkers); // Adding this particular worker request to the max heap
                     }
-                    if (maxNumOfWorkers < numOfRequestedWorkers) {
+                    if (maxNumOfWorkers < numOfRequestedWorkers) { // Creating new workers if needed
                         for (int i = 0; i < numOfRequestedWorkers - maxNumOfWorkers; i++) {
                             createWorker();
                             System.out.println("\nCreate worker");
                         }
                     }
                     localsAndPairOfNumUrlsAndNumWorkers.put(uniqueLocalId,new Pair(imagesUrls.size(),numOfRequestedWorkers));
-                    sendImageUrls(imagesUrls,uniqueLocalId);
+                    sendImageUrls(imagesUrls,uniqueLocalId); // Sending to the workers to parse
                 });
                 if (messageElements[awsBundle.messageType].equals("terminate")) {
                     awsBundle.changeManagerStatusToTerminate();
@@ -80,10 +79,10 @@ public class Manager {
                         shouldTerminate=true;
                     }
                 }
-                awsBundle.deleteMessageFromQueue(awsBundle.requestsAppsQueueName, message);
+                awsBundle.deleteMessageFromQueue(awsBundle.requestsAppsQueueName, message); // delete the massage after sending it to the workers
             }
         }
-        threadPool.shutdown();
+        threadPool.shutdown(); // After exiting the while(!shouldTerminate) loop
         while (!threadPool.awaitTermination(24, TimeUnit.HOURS)) {
             System.out.println("waiting for termination...");
         }
@@ -105,10 +104,6 @@ public class Manager {
     private static int calcNumOfWorkers(int workersRatio,int numOfUrls) {
         int round = ((numOfUrls % workersRatio) == 0) ? 0 : 1;
         int numOfWorkers = (numOfUrls / workersRatio) + round;
-        System.out.println("imageUrl.size(): " + numOfUrls);
-        System.out.println("workers ratio: " + workersRatio);
-        System.out.println("round: " + round);
-        System.out.println("numOfWorkers: " + numOfWorkers);
         return numOfWorkers;
     }
 
@@ -154,7 +149,7 @@ public class Manager {
             int numOfUrls=0;
             while(isListening) {
                 System.out.println("listening...");
-                List<Message> results = awsBundle.fetchNewMessages(awsBundle.resultsWorkersQueueName);
+                List<Message> results = awsBundle.fetchNewMessages(awsBundle.resultsWorkersQueueName); // Looking for new result from workers
                 for (Message result : results) {
                     System.out.print("Fetched result\n");
                     awsBundle.deleteMessageFromQueue(resultsWorkersQueueUrl,result);
@@ -181,11 +176,11 @@ public class Manager {
                     Integer remainingUrlsCurrLocal = localsAndPairOfNumUrlsAndNumWorkers.get(uniqueLocalId).getFirst();
                     Integer numOfWorkersForLocal = localsAndPairOfNumUrlsAndNumWorkers.get(uniqueLocalId).getSecond();
                     remainingUrlsCurrLocal--;
-                    if (remainingUrlsCurrLocal == 0) {
+                    if (remainingUrlsCurrLocal == 0) { // We handled all of this local requests
                         boolean shouldReduceWorkers = false;
                         int currentMaxNumOfWorkers;
                         int nextMaxNumOfWorkers=0;
-                        synchronized (maxHeapNumWorkersAndLocals) {
+                        synchronized (maxHeapNumWorkersAndLocals) { // If this local was on the top of the heap, we will reduce the workers number
                             currentMaxNumOfWorkers = maxHeapNumWorkersAndLocals.peek();
                             maxHeapNumWorkersAndLocals.remove(numOfWorkersForLocal);
                             if (currentMaxNumOfWorkers == numOfWorkersForLocal) {
@@ -193,7 +188,7 @@ public class Manager {
                                 shouldReduceWorkers = true; //created to minimize synchronization scope
                             }
                         }
-                        if (shouldReduceWorkers)
+                        if (shouldReduceWorkers) //created to minimize synchronization scope
                             reduceWorkers(currentMaxNumOfWorkers-nextMaxNumOfWorkers);
 
                         //create summary file and send it back to local
@@ -222,7 +217,7 @@ public class Manager {
                             e.printStackTrace();
                         }
                     }
-                    else {
+                    else { // We have not finished with this local, only update the remainingUrlsCurrLocal
                         localsAndPairOfNumUrlsAndNumWorkers.put(uniqueLocalId, new Pair<>(remainingUrlsCurrLocal,numOfWorkersForLocal));
                     }
                 }
@@ -232,9 +227,7 @@ public class Manager {
 
     private static void reduceWorkers(int numOfWorkersToReduce)
     {
-        System.out.println("In reduce Workers");
         for (int i=0;i<numOfWorkersToReduce;i++) {
-            System.out.println("Reducing workers by 1");
             awsBundle.sendMessage(awsBundle.requestsWorkersQueueName, "termination");
         }
     }
@@ -264,7 +257,6 @@ public class Manager {
         {
             isListening = false;
         }
-//        cleanQueues();
         deleteQueues();
         System.out.println("TERMINATED");
         awsBundle.terminateCurrentInstance();

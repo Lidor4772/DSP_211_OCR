@@ -33,21 +33,20 @@ public class Worker {
                     if (message.getBody().equals("termination"))
                     {
 
-                        if (!shouldTerminate) {
-                            System.out.println("got first termination message");
+                        if (!shouldTerminate) { //got first termination message ;
                             shouldTerminate = true;
                             awsBundle.deleteMessageFromQueue(awsBundle.requestsWorkersQueueName, message);
                             continue;
                         }
                         else
                         {
-                            System.out.println("got another termination message, sending it back to the queue");
+                            //got another termination message, sending it back to the queue
                             awsBundle.deleteMessageFromQueue(awsBundle.requestsWorkersQueueName, message);
                             awsBundle.sendMessage(awsBundle.requestsWorkersQueueName, "termination");
                             continue;
                         }
                     }
-                    TimerTask task = setTimerTask(message,120);
+                    TimerTask task = setTimerTask(message,120); // Heart bit
                     timer.schedule(task,60000,60000);
                     System.out.println("Url number:"+ urlCount++);
                     String[] urlElements = message.getBody().split("%%%");
@@ -67,7 +66,7 @@ public class Worker {
                         isProcessed = true;
 
                     }
-                    catch (Exception e)
+                    catch (Exception e) // In case of exception the worker inform it and continuing to the next url
                     {
                         System.out.println("Exception e:" + e.getMessage());
                         awsBundle.sendMessage(awsBundle.resultsWorkersQueueName,createMessage(localId+"%%%"+lineNumber+"%%%"+url,"XXX",e.getMessage()));
